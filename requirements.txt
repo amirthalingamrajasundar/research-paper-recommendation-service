@@ -1,0 +1,7 @@
+sentence-transformers
+pandas
+scikit-learn
+google-genai
+numpy
+tqdm
+nest_asyncio
