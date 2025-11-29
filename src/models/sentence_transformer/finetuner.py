@@ -25,8 +25,8 @@ def load_training_data(annotations_path, papers_df):
     Returns:
         List of InputExample objects
     """
-    # Load annotations
-    annotations_df = pd.read_csv(annotations_path)
+    # Load annotations with explicit string dtype to preserve paper ID format
+    annotations_df = pd.read_csv(annotations_path, dtype={'paper1_id': str, 'paper2_id': str})
     logger.info(f"Loaded {len(annotations_df)} annotated pairs")
     
     # Index papers by ID for fast lookup

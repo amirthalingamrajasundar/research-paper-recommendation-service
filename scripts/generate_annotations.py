@@ -44,7 +44,8 @@ async def main():
     
     # Check for existing results to resume
     if output_path.exists():
-        existing_df = pd.read_csv(output_path)
+        # Read with explicit string dtype for paper IDs to preserve leading zeros
+        existing_df = pd.read_csv(output_path, dtype={'paper1_id': str, 'paper2_id': str})
         existing_pairs = set(zip(existing_df['paper1_id'], existing_df['paper2_id']))
         pairs = [(p1, p2) for p1, p2 in pairs if (p1, p2) not in existing_pairs]
         results = existing_df.to_dict('records')
@@ -66,8 +67,8 @@ async def main():
         for (p1_id, p2_id), score_data in zip(batch, batch_results):
             if score_data:
                 results.append({
-                    'paper1_id': p1_id,
-                    'paper2_id': p2_id,
+                    'paper1_id': str(p1_id),  # Ensure string to preserve leading zeros
+                    'paper2_id': str(p2_id),
                     **score_data
                 })
         

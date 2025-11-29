@@ -13,3 +13,7 @@ scipy
 kaggle
 pyarrow
 python-dotenv
+datasets
+transformers[torch]
+fastapi
+uvicorn
