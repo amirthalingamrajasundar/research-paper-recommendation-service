@@ -1,70 +1,515 @@
-# Fine-tuning a Sentence Transformer for Arxiv Research Paper Recommendations
+# Scholar Stream: Research Paper Recommendation Service
 
-This project demonstrates how to fine-tune a sentence-transformer model to recommend relevant research papers from the Arxiv dataset. The process involves two main steps:
+A production-ready research paper recommendation system built on the ArXiv dataset. The service supports multiple recommendation models (TF-IDF, Sentence Transformer, Fine-tuned Sentence Transformer) and is designed for deployment on Google Cloud Run.
 
-1.  **Data Preparation:** Using the Gemini API to generate a labeled dataset of similar and dissimilar paper pairs.
-2.  **Fine-tuning:** Using the generated dataset to fine-tune a pre-trained sentence-transformer model.
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Design Decisions & Assumptions](#design-decisions--assumptions)
+- [Getting Started](#getting-started)
+- [Training Pipeline](#training-pipeline)
+- [API Reference](#api-reference)
+- [Deployment](#deployment)
+- [Evaluation](#evaluation)
+- [Contributing](#contributing)
+
+---
+
+## Overview
+
+Scholar Stream enables researchers to discover relevant academic papers through semantic search and recommendations. Given a query or a paper of interest, the system finds the most similar papers from a corpus of 100,000 ArXiv papers.
+
+### Key Capabilities
+
+- **Semantic Search**: Find papers by natural language queries
+- **Paper Recommendations**: Get similar papers based on a selected paper
+- **Multiple Models**: Compare TF-IDF baseline vs. neural embeddings
+- **Production-Ready API**: RESTful endpoints with pagination and error handling
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **TF-IDF Model** | Fast, interpretable baseline using term frequency vectors |
+| **Sentence Transformer** | Dense embeddings using `all-MiniLM-L6-v2` (384 dimensions) |
+| **Fine-tuned Model** | Domain-adapted embeddings trained on LLM-annotated paper pairs |
+| **LLM Annotation** | Dual-LLM scoring (GPT-4o + Claude 3.5 Haiku) for training data |
+| **Comprehensive Eval** | Precision, Recall, MRR, MAP, nDCG metrics with LLM judges |
+
+---
+
+## Architecture
+
+### Training Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Training Pipeline                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
+│  │  Raw ArXiv  │───▶│  Balanced   │───▶│   Diverse   │───▶│    LLM      │  │
+│  │  Metadata   │    │  Sampling   │    │   Pairs     │    │  Scoring    │  │
+│  │   (~5GB)    │    │  (100K)     │    │  (10K)      │    │  (GPT-4o +  │  │
+│  │             │    │             │    │             │    │   Claude)   │  │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
+│                                                                  │          │
+│                                                                  ▼          │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
+│  │   TF-IDF    │    │  Base ST    │    │ Fine-tuned  │◀───│  Annotated  │  │
+│  │   Model     │    │ Embeddings  │    │     ST      │    │   Pairs     │  │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Deployment Architecture (Google Cloud Run)
+
+```
+                              ┌─────────────────────────────┐
+                              │        Internet             │
+                              └──────────────┬──────────────┘
+                                             │
+                                             ▼
+                              ┌─────────────────────────────┐
+                              │   Cloud Run Gateway         │
+                              │   (Routes by model param)   │
+                              │   ~100MB, 512Mi RAM         │
+                              └──────────────┬──────────────┘
+                                             │
+              ┌──────────────────────────────┼──────────────────────────────┐
+              │                              │                              │
+              ▼                              ▼                              ▼
+┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
+│   TF-IDF Service        │   │   Base ST Service       │   │   Fine-tuned Service    │
+│   ~350MB image          │   │   ~700MB image          │   │   ~900MB image          │
+│   1Gi RAM               │   │   2Gi RAM               │   │   2Gi RAM               │
+│                         │   │                         │   │                         │
+│   • Papers (100K)       │   │   • Papers (100K)       │   │   • Papers (100K)       │
+│   • TF-IDF Vectorizer   │   │   • ST Model            │   │   • Fine-tuned Model    │
+│   • Sparse Matrix       │   │   • Embeddings (150MB)  │   │   • Embeddings (150MB)  │
+└─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
+```
+
+**Why separate services?**
+- Smaller Docker images = faster cold starts
+- Independent scaling per model
+- Model updates don't affect other services
+- Memory isolation (TF-IDF needs less than ST)
+
+---
 
 ## Project Structure
 
--   `notebooks/`: Contains the Jupyter notebooks for data preparation and model fine-tuning.
-    -   `01.Data_Preparation_(ASync)_Arxiv.ipynb`: This notebook uses the Gemini API to generate a labeled dataset of paper pairs with similarity scores.
-    -   `02.Fine_tuning_sentence_transformer_03.ipynb`: This notebook fine-tunes a sentence-transformer model on the labeled dataset.
--   `README.md`: This file.
+```
+research-paper-recommendation-service/
+├── api/                              # API services
+│   ├── gateway/                      # Request router
+│   │   ├── main.py
+│   │   └── Dockerfile
+│   ├── services/
+│   │   ├── tfidf/                    # TF-IDF service
+│   │   ├── sentence_transformer/     # Base ST service
+│   │   └── finetuned/                # Fine-tuned service
+│   ├── shared/                       # Shared models & utils
+│   └── requirements.txt
+│
+├── config/                           # Configuration files
+│   ├── data_config.yaml              # Data paths & params
+│   └── model_config.yaml             # Model hyperparameters
+│
+├── data/
+│   ├── raw/                          # Raw ArXiv JSON
+│   ├── processed/                    # Processed parquet
+│   └── annotated/                    # LLM annotations
+│
+├── models/                           # Trained model artifacts
+│   ├── tfidf/
+│   ├── sentence_transformer/
+│   └── finetuned_st/
+│
+├── notebooks/                        # Exploration notebooks
+│   ├── baseline.ipynb
+│   └── 02.Fine_tuning_sentence_transformer_03.ipynb
+│
+├── scripts/                          # Pipeline scripts
+│   ├── prepare_data.py
+│   ├── generate_annotations.py
+│   ├── train_models.py
+│   └── run_evaluation.py
+│
+├── src/                              # Core source code
+│   ├── annotation/                   # LLM annotation
+│   │   ├── pair_sampler.py
+│   │   └── llm_scorer.py
+│   ├── evaluation/                   # Evaluation metrics
+│   │   └── evaluator.py
+│   ├── models/                       # Model implementations
+│   │   ├── tfidf/trainer.py
+│   │   └── sentence_transformer/
+│   │       ├── base_model.py
+│   │       └── finetuner.py
+│   ├── preprocessing/
+│   │   └── data_loader.py
+│   └── config.py                     # Configuration loader
+│
+├── docker-compose.yml                # Local development
+├── cloudbuild.yaml                   # GCP Cloud Build
+├── deploy.sh                         # Deployment script
+├── Makefile                          # Task automation
+└── requirements.txt                  # Python dependencies
+```
+
+---
+
+## Design Decisions & Assumptions
+
+### Data Processing
+
+| Decision | Rationale |
+|----------|-----------|
+| **100K balanced sample** | Full dataset (~2M papers) is too large for quick iteration. Sampling ensures category diversity with max 2K papers per category. |
+| **Primary category only** | Papers have multiple categories; using only the first simplifies grouping and evaluation. |
+| **Title + Abstract as text** | Concatenating provides rich semantic content without full-text complexity. |
+
+### Annotation Strategy
+
+| Decision | Rationale |
+|----------|-----------|
+| **Dual-LLM scoring** | GPT-4o + Claude 3.5 Haiku provide diverse perspectives; averaging reduces bias. |
+| **1-5 scoring scale** | More nuanced than binary; normalized to 0-1 for training. |
+| **Diverse pair sampling** | 4 buckets (same category, same author, related category, random) ensure score distribution covers full range. |
+| **10K pairs** | Balance between annotation cost and model performance. |
+
+### Model Choices
+
+| Decision | Rationale |
+|----------|-----------|
+| **TF-IDF baseline** | Fast, interpretable, no GPU needed. Good baseline for comparison. |
+| **all-MiniLM-L6-v2** | Lightweight (22M params), fast inference, good quality. Suitable for CPU deployment. |
+| **CosineSimilarityLoss** | Directly optimizes for similarity scores; matches our annotation format. |
+| **CPU-only inference** | Reduces deployment cost; MiniLM is fast enough on CPU. |
+
+### Deployment Architecture
+
+| Decision | Rationale |
+|----------|-----------|
+| **Bake artifacts into images** | Eliminates GCS download latency on cold starts. Faster startup > smaller images. |
+| **Separate images per model** | Independent scaling, smaller per-image size, isolated failures. |
+| **Gateway routing** | Single entry point for UI; handles model selection logic. |
+| **min-instances=0** | Cost optimization; accept ~5-10s cold starts vs. $30-50/month for warm instances. |
+| **Cloud Run** | Serverless, auto-scaling, pay-per-request. Ideal for variable traffic. |
+
+### Assumptions
+
+1. **Dataset is static**: The 100K papers don't change frequently. Model retraining is manual.
+2. **English papers only**: No multilingual support in current implementation.
+3. **Single-user queries**: No personalization or user history.
+4. **Moderate traffic**: Designed for ~1K requests/day, not high-volume production.
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
--   Python 3.x
--   Jupyter Notebook or JupyterLab
--   A Google account with access to the Gemini API.
--   The Arxiv metadata dataset (`arxiv-metadata-oai-snapshot.json`).
+- Python 3.11+
+- Docker (for containerized deployment)
+- Google Cloud SDK (for GCP deployment)
+- Kaggle account (for dataset download)
 
 ### Installation
 
-1.  Clone the repository:
-    ```bash
-    git clone <repository-url>
-    ```
-2.  Install the required dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
+```bash
+# Clone repository
+git clone <repository-url>
+cd research-paper-recommendation-service
 
-### Running the Notebooks
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
 
-1.  **Data Preparation:**
-    -   Open and run the `notebooks/01.Data_Preparation_(ASync)_Arxiv.ipynb` notebook.
-    -   Make sure to set your `GEMINI_API_KEY` in the notebook.
-    -   This notebook will generate a `my_labeled_training_data.csv` file.
+# Install dependencies
+pip install -r requirements.txt
 
-2.  **Fine-tuning:**
-    -   Open and run the `notebooks/02.Fine_tuning_sentence_transformer_03.ipynb` notebook.
-    -   This notebook will load the `my_labeled_training_data.csv` file and fine-tune the sentence-transformer model.
-    -   The fine-tuned model will be saved to a directory named `finetuned-arxiv-recommender`.
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your API keys:
+#   LLM_API_KEY=your-openai-api-key
+#   LLM_BASE_URL=https://api.openai.com/v1
+#   GPT_4O=gpt-4o
+#   CLAUDE_3_5_HAIKU=claude-3-5-haiku-20241022
+```
 
-## How it Works
+### Quick Start
 
-### Data Preparation
+```bash
+# 1. Prepare data (downloads from Kaggle if needed)
+make data
 
-The `01.Data_Preparation_(ASync)_Arxiv.ipynb` notebook performs the following steps:
+# 2. Train baseline models
+make train
 
-1.  **Loads Arxiv Metadata:** Reads the Arxiv metadata from a JSON file.
-2.  **Generates Paper Pairs:** Creates random pairs of papers to be compared.
-3.  **Gets Similarity Scores:** Uses the Gemini API to obtain a similarity score for each paper pair. The prompt instructs the model to act as a research assistant and provide a score between 0.0 and 1.0.
-4.  **Saves Labeled Data:** Saves the paper pairs and their similarity scores to a CSV file.
+# 3. Start API locally
+make api-tfidf  # In terminal 1
+make api-st     # In terminal 2 (optional)
+make api-gateway  # In terminal 3
 
-### Fine-tuning
+# 4. Test API
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=machine+learning&model=tfidf&limit=3"
+```
 
-The `02.Fine_tuning_sentence_transformer_03.ipynb` notebook performs the following steps:
+---
 
-1.  **Loads Labeled Data:** Loads the `my_labeled_training_data.csv` file.
-2.  **Prepares Data:** Converts the data into `InputExample` objects suitable for the `sentence-transformers` library.
-3.  **Defines Model and Loss:** Uses the `all-MiniLM-L6-v2` model and `CosineSimilarityLoss`.
-4.  **Fine-tunes:** Fine-tunes the model on the labeled dataset.
-5.  **Saves Model:** Saves the fine-tuned model.
+## Training Pipeline
+
+### Full Pipeline
+
+```bash
+# Run complete pipeline
+make all
+```
+
+This executes:
+1. `make data` - Download and prepare 100K balanced dataset
+2. `make train` - Train TF-IDF and Sentence Transformer models
+3. `make annotate` - Generate LLM annotations (requires API keys)
+4. `make finetune` - Fine-tune Sentence Transformer
+5. `make eval` - Run evaluation
+
+### Individual Steps
+
+```bash
+# Data preparation
+make data
+
+# Train baseline models only
+make train
+
+# Generate annotations (requires LLM API keys)
+make annotate
+
+# Fine-tune on annotations
+make finetune
+
+# Run evaluation
+make eval
+```
+
+### Output Artifacts
+
+```
+data/
+├── processed/index_100k.parquet     # 100K papers
+└── annotated/training_pairs_10k.csv # LLM-scored pairs
+
+models/
+├── tfidf/
+│   ├── vectorizer.joblib            # Fitted TF-IDF
+│   └── embeddings.joblib            # Sparse matrix
+├── sentence_transformer/
+│   └── embeddings.npy               # Dense embeddings (100K × 384)
+└── finetuned_st/
+    ├── model/                       # Fine-tuned weights
+    └── embeddings.npy               # Fine-tuned embeddings
+```
+
+---
+
+## API Reference
+
+### Base URL
+
+```
+http://localhost:8000/api/v1
+```
+
+### Endpoints
+
+#### Search Papers
+
+```http
+GET /scholar-stream/search?q={query}&model={model}&page={page}&limit={limit}
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `q` | string | No | - | Search query |
+| `model` | string | Yes | - | `tfidf`, `base_transformer`, or `fine_tuned_transformer` |
+| `page` | int | No | 1 | Page number |
+| `limit` | int | No | 6 | Results per page (max 50) |
+
+#### Get Recommendations
+
+```http
+GET /scholar-stream/recommendations?paper_id={id}&model={model}&limit={limit}
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `paper_id` | string | Yes | - | ArXiv paper ID |
+| `model` | string | Yes | - | Recommendation model |
+| `limit` | int | No | 3 | Number of recommendations (max 20) |
+
+#### Get Paper Details
+
+```http
+GET /scholar-stream/paper/{paper_id}
+```
+
+### Response Format
+
+```json
+{
+  "success": true,
+  "data": {
+    "papers": [
+      {
+        "id": "2103.15538",
+        "title": "Attention Is All You Need",
+        "authors": ["Ashish Vaswani", "Noam Shazeer"],
+        "abstract": "The Transformer architecture...",
+        "categories": ["cs.CL", "cs.LG"],
+        "similarity_score": 0.89
+      }
+    ],
+    "pagination": {
+      "current_page": 1,
+      "total_pages": 15,
+      "total_results": 89,
+      "has_next": true
+    }
+  }
+}
+```
+
+---
+
+## Deployment
+
+### Local Development (Docker)
+
+```bash
+# Build all images
+make api-build
+
+# Start all services
+make api-up
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+make api-down
+```
+
+### Google Cloud Run Deployment
+
+#### Prerequisites
+
+1. Google Cloud project with billing enabled
+2. Cloud Run and Container Registry APIs enabled
+3. `gcloud` CLI authenticated
+
+#### Deploy
+
+```bash
+# Set your project
+export PROJECT_ID=your-gcp-project-id
+export REGION=us-central1
+
+# Deploy all services
+make deploy
+```
+
+This will:
+1. Build and push Docker images to Google Container Registry
+2. Deploy 4 Cloud Run services (gateway + 3 backends)
+3. Configure gateway with backend URLs
+4. Output the public gateway URL
+
+#### Manual Deployment
+
+```bash
+# Build and push individual service
+gcloud builds submit \
+  --tag gcr.io/$PROJECT_ID/scholar-stream-tfidf \
+  -f api/services/tfidf/Dockerfile .
+
+# Deploy to Cloud Run
+gcloud run deploy scholar-stream-tfidf \
+  --image gcr.io/$PROJECT_ID/scholar-stream-tfidf \
+  --platform managed \
+  --region us-central1 \
+  --memory 1Gi \
+  --allow-unauthenticated
+```
+
+### Cost Estimates (Cloud Run)
+
+| Configuration | Monthly Cost (1K req/day) |
+|---------------|---------------------------|
+| min-instances=0 (cold starts) | ~$5-15 |
+| min-instances=1 (always warm) | ~$50-80 |
+
+---
+
+## Evaluation
+
+### Metrics
+
+| Metric | Description |
+|--------|-------------|
+| **Precision@K** | Fraction of top-K results that are relevant (score ≥ 3) |
+| **Recall@K** | Fraction of relevant items found in top-K |
+| **MRR** | Mean Reciprocal Rank of first relevant result |
+| **MAP@K** | Mean Average Precision at K |
+| **nDCG@K** | Normalized Discounted Cumulative Gain |
+| **Category Consistency** | % of recommendations in same category |
+
+### Run Evaluation
+
+```bash
+# Evaluate with default settings (20 samples, top-10)
+make eval
+
+# Custom evaluation
+python -m scripts.run_evaluation --n_samples 50 --top_k 5
+```
+
+### Expected Results
+
+| Model | Precision@10 | nDCG@10 | MRR |
+|-------|-------------|---------|-----|
+| TF-IDF | ~0.70 | ~0.85 | ~0.90 |
+| Base ST | ~0.75 | ~0.88 | ~0.92 |
+| Fine-tuned ST | ~0.80 | ~0.91 | ~0.95 |
+
+---
 
 ## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## Acknowledgments
+
+- [ArXiv Dataset](https://www.kaggle.com/Cornell-University/arxiv) by Cornell University
+- [Sentence Transformers](https://www.sbert.net/) library
+- [FastAPI](https://fastapi.tiangolo.com/) framework

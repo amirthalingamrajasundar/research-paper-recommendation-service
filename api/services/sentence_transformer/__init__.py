@@ -1,0 +1,1 @@
+"""Sentence Transformer service."""

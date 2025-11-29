@@ -1,0 +1,152 @@
+# =====================
+# Python
+# =====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# =====================
+# Virtual Environments
+# =====================
+venv/
+ENV/
+env/
+.venv/
+.conda/
+
+# =====================
+# IDE & Editors
+# =====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.history
+*.sublime-project
+*.sublime-workspace
+
+# =====================
+# OS Files
+# =====================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =====================
+# Jupyter Notebooks
+# =====================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# =====================
+# Environment & Secrets
+# =====================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+kaggle.json
+secrets/
+
+# =====================
+# Data Files (Large)
+# =====================
+data/raw/
+data/raw/*.json
+data/raw/*.zip
+*.json.gz
+
+# Keep processed and annotated structure but ignore large files
+data/processed/*.parquet
+data/annotated/*.csv
+
+# =====================
+# Model Artifacts (Large)
+# =====================
+# Keep model code, ignore large binary files
+models/tfidf/*.joblib
+models/sentence_transformer/*.npy
+models/finetuned_st/
+!models/finetuned_st/.gitkeep
+
+# Individual model files (anywhere)
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.onnx
+
+# Sentence transformer model weights
+**/pytorch_model.bin
+**/model.safetensors
+
+# =====================
+# Logs & Temp Files
+# =====================
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.temp
+*.cache
+
+# =====================
+# Testing
+# =====================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# =====================
+# Build & Distribution
+# =====================
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# =====================
+# Docker
+# =====================
+*.tar
+docker-compose.override.yml
+
+# =====================
+# Misc
+# =====================
+*.bak
+*.backup
+.codeiumignore
+Users/

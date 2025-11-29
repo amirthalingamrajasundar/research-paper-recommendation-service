@@ -1,0 +1,35 @@
+tfidf:
+  max_features: 10000
+  ngram_range: [1, 2]
+  min_df: 2
+  max_df: 0.8
+  paths:
+    vectorizer: "models/tfidf/vectorizer.joblib"
+    embeddings: "models/tfidf/embeddings.joblib"
+
+sentence_transformer:
+  base_model: "all-MiniLM-L6-v2"
+  max_seq_length: 512
+  batch_size: 32
+  paths:
+    embeddings: "models/sentence_transformer/embeddings.npy"
+  
+  fine_tuning:
+    epochs: 10
+    warmup_steps: 100
+    learning_rate: 2e-5
+    batch_size: 16
+    evaluation_steps: 500
+    paths:
+      model: "models/finetuned_st/model"
+      embeddings: "models/finetuned_st/embeddings.npy"
+    
+evaluation:
+  k_values: [5, 10, 20, 50]
+  metrics:
+    - recall
+    - precision
+    - f1
+    - map
+    - ndcg
+    - mrr

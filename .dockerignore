@@ -1,0 +1,43 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+venv/
+ENV/
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Data (not needed in all images - copied selectively)
+data/raw/
+data/annotated/
+
+# Notebooks
+notebooks/
+
+# Tests
+tests/
+pytest.ini
+
+# Docs
+*.md
+docs/
+
+# Misc
+.DS_Store
+*.log

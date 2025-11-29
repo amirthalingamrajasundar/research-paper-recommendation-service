@@ -5,3 +5,11 @@ google-genai
 numpy
 tqdm
 nest_asyncio
+joblib
+langchain-openai
+matplotlib
+seaborn
+scipy
+kaggle
+pyarrow
+python-dotenv

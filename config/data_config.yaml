@@ -1,0 +1,21 @@
+# Data configuration
+kaggle:
+  dataset_name: "Cornell-University/arxiv"
+  paths:
+    credentials: "kaggle.json"
+
+dataset:
+  raw_file: "arxiv-metadata-oai-snapshot.json"
+  paths:
+    raw_data: "data/raw/arxiv-metadata-oai-snapshot.json"
+    processed_data: "data/processed/index_100k.parquet"
+
+sampling:
+  total_size: 100000
+  max_per_category: 2000
+
+annotation:
+  n_pairs: 10000
+  batch_size: 10
+  paths:
+    output: "data/annotated/training_pairs_10k.csv"

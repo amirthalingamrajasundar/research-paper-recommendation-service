@@ -1,0 +1,51 @@
+# Docker Compose for local development
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: api/gateway/Dockerfile
+    ports:
+      - "8000:8080"
+    environment:
+      - TFIDF_SERVICE_URL=http://tfidf:8080
+      - ST_SERVICE_URL=http://sentence-transformer:8080
+      - FT_SERVICE_URL=http://finetuned:8080
+    depends_on:
+      - tfidf
+      - sentence-transformer
+      - finetuned
+
+  tfidf:
+    build:
+      context: .
+      dockerfile: api/services/tfidf/Dockerfile
+    ports:
+      - "8001:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  sentence-transformer:
+    build:
+      context: .
+      dockerfile: api/services/sentence_transformer/Dockerfile
+    ports:
+      - "8002:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  finetuned:
+    build:
+      context: .
+      dockerfile: api/services/finetuned/Dockerfile
+    ports:
+      - "8003:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
