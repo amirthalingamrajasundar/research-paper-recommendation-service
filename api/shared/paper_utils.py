@@ -29,8 +29,14 @@ def parse_categories(categories_str: str) -> List[str]:
 
 def parse_versions(versions_data: Any) -> List[Version]:
     """Parse versions data to list of Version objects."""
-    if not versions_data or pd.isna(versions_data):
+    if versions_data is None:
         return []
+    # Handle scalar NaN check (avoid array truth value error)
+    try:
+        if pd.isna(versions_data):
+            return []
+    except ValueError:
+        pass  # versions_data is an array, continue processing
     if isinstance(versions_data, str):
         import ast
         try:

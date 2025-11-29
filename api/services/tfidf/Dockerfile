@@ -10,12 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 RUN pip install --no-cache-dir \
-    fastapi==0.109.0 \
-    uvicorn[standard]==0.27.0 \
-    pandas==2.1.4 \
-    pyarrow==14.0.2 \
-    scikit-learn==1.3.2 \
-    joblib==1.3.2
+    fastapi \
+    uvicorn[standard] \
+    pandas \
+    pyarrow \
+    scikit-learn \
+    joblib
 
 # Copy shared code
 COPY api/shared /app/api/shared
