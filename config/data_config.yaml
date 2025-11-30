@@ -15,7 +15,7 @@ sampling:
   max_per_category: 2000
 
 annotation:
-  n_pairs: 50
+  n_pairs: 11000
   batch_size: 10
   paths:
     output: "data/annotated/training_pairs_10k.csv"

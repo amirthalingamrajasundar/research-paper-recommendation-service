@@ -388,6 +388,111 @@ GET /scholar-stream/paper/{paper_id}
 }
 ```
 
+### Testing the API (curl commands)
+
+#### Health Checks
+
+```bash
+# Gateway health
+curl http://localhost:8000/health
+
+# Individual service health (when running locally)
+curl http://localhost:8001/health  # TF-IDF
+curl http://localhost:8002/health  # Sentence Transformer
+curl http://localhost:8003/health  # Fine-tuned
+```
+
+#### Search Papers
+
+```bash
+# Search with TF-IDF model
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=machine+learning&model=tfidf&limit=5"
+
+# Search with base Sentence Transformer
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=machine+learning&model=base_transformer&limit=5"
+
+# Search with fine-tuned Sentence Transformer
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=machine+learning&model=fine_tuned_transformer&limit=5"
+
+# Search with pagination
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=neural+networks&model=tfidf&page=2&limit=10"
+
+# Search without query (returns random/default results)
+curl "http://localhost:8000/api/v1/scholar-stream/search?model=tfidf&limit=5"
+
+# Complex query with special characters (URL encoded)
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=deep+learning+for+natural+language+processing&model=base_transformer&limit=3"
+```
+
+#### Get Recommendations
+
+```bash
+# Recommendations using TF-IDF
+curl "http://localhost:8000/api/v1/scholar-stream/recommendations?paper_id=0704.0001&model=tfidf&limit=5"
+
+# Recommendations using base Sentence Transformer
+curl "http://localhost:8000/api/v1/scholar-stream/recommendations?paper_id=0704.0001&model=base_transformer&limit=5"
+
+# Recommendations using fine-tuned model
+curl "http://localhost:8000/api/v1/scholar-stream/recommendations?paper_id=0704.0001&model=fine_tuned_transformer&limit=5"
+
+# Get more recommendations
+curl "http://localhost:8000/api/v1/scholar-stream/recommendations?paper_id=0704.0001&model=tfidf&limit=20"
+```
+
+#### Get Paper Details
+
+```bash
+# Get details for a specific paper
+curl "http://localhost:8000/api/v1/scholar-stream/paper/0704.0001"
+
+# Another paper
+curl "http://localhost:8000/api/v1/scholar-stream/paper/0704.0002"
+```
+
+#### Error Cases
+
+```bash
+# Invalid model (should return 400)
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=test&model=invalid_model"
+
+# Missing required parameter (should return 422)
+curl "http://localhost:8000/api/v1/scholar-stream/search?q=test"
+
+# Non-existent paper (should return 404)
+curl "http://localhost:8000/api/v1/scholar-stream/paper/9999.9999"
+
+# Invalid paper_id format
+curl "http://localhost:8000/api/v1/scholar-stream/recommendations?paper_id=invalid&model=tfidf&limit=5"
+```
+
+#### Direct Backend Service Calls (bypassing gateway)
+
+```bash
+# TF-IDF service directly
+curl "http://localhost:8001/scholar-stream/search?q=quantum+computing&model=tfidf&limit=3"
+curl "http://localhost:8001/scholar-stream/recommendations?paper_id=0704.0001&model=tfidf&limit=3"
+curl "http://localhost:8001/scholar-stream/paper/0704.0001"
+
+# Sentence Transformer service directly
+curl "http://localhost:8002/scholar-stream/search?q=quantum+computing&model=base_transformer&limit=3"
+curl "http://localhost:8002/scholar-stream/recommendations?paper_id=0704.0001&model=base_transformer&limit=3"
+
+# Fine-tuned service directly
+curl "http://localhost:8003/scholar-stream/search?q=quantum+computing&model=fine_tuned_transformer&limit=3"
+curl "http://localhost:8003/scholar-stream/recommendations?paper_id=0704.0001&model=fine_tuned_transformer&limit=3"
+```
+
+#### Pretty-print JSON responses
+
+```bash
+# Use jq for formatted output
+curl -s "http://localhost:8000/api/v1/scholar-stream/search?q=machine+learning&model=tfidf&limit=2" | jq .
+
+# Or use Python
+curl -s "http://localhost:8000/api/v1/scholar-stream/search?q=machine+learning&model=tfidf&limit=2" | python -m json.tool
+```
+
 ---
 
 ## Deployment

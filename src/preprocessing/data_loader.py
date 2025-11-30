@@ -11,6 +11,17 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def is_clean_text(text: str) -> bool:
+    """Check if text contains only printable ASCII characters."""
+    if not text:
+        return False
+    try:
+        # Check if all characters are printable ASCII (32-126) plus whitespace
+        return all(ord(c) < 128 for c in text)
+    except:
+        return False
+
 def download_from_kaggle(dataset_name, destination_dir):
     """
     Download the dataset from Kaggle.
@@ -62,9 +73,15 @@ def load_dataset(filepath=None, total_size=None, max_per_category=None):
             
             # Cap each category at max_per_category
             if category_counts.get(primary_cat, 0) < max_per_category:
+                # Skip papers with non-ASCII characters in title or abstract
+                title = paper.get('title', '')
+                abstract = paper.get('abstract', '')
+                if not is_clean_text(title) or not is_clean_text(abstract):
+                    continue
+                
                 # Add processed fields
                 paper['primary_category'] = primary_cat
-                paper['text'] = f"{paper['title']} {paper['abstract']}"
+                paper['text'] = f"{title} {abstract}"
                 
                 all_papers.append(paper)
                 category_counts[primary_cat] = category_counts.get(primary_cat, 0) + 1

@@ -62,9 +62,12 @@ async def main():
             recommendation = df.loc[p2_id].to_dict()
             tasks.append(scorer.score_pair(query_paper, recommendation))
         
-        batch_results = await asyncio.gather(*tasks)
+        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for (p1_id, p2_id), score_data in zip(batch, batch_results):
+            if isinstance(score_data, Exception):
+                logger.warning(f"Failed to score pair ({p1_id}, {p2_id}): {score_data}")
+                continue
             if score_data:
                 results.append({
                     'paper1_id': str(p1_id),  # Ensure string to preserve leading zeros
@@ -75,7 +78,7 @@ async def main():
         # Save incrementally every N batches
         batch_num = i // batch_size
         if batch_num > 0 and batch_num % save_interval == 0:
-            pd.DataFrame(results).to_csv(output_path, index=False, quoting=csv.QUOTE_ALL)
+            pd.DataFrame(results).to_csv(output_path, index=False, quoting=csv.QUOTE_ALL, escapechar='\\')
             logger.info(f"Checkpoint saved: {len(results)} pairs")
         
         # Small delay between batches to respect rate limits
@@ -83,8 +86,8 @@ async def main():
     
     # Final save
     results_df = pd.DataFrame(results)
-    # Use QUOTE_ALL to handle special characters in reasoning fields
-    results_df.to_csv(output_path, index=False, quoting=csv.QUOTE_ALL)
+    # Use QUOTE_ALL and escapechar to handle special characters in reasoning fields
+    results_df.to_csv(output_path, index=False, quoting=csv.QUOTE_ALL, escapechar='\\')
     logger.info(f"Saved {len(results_df)} annotated pairs to {output_path}")
     
     # Log distribution
