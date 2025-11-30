@@ -45,56 +45,7 @@ Scholar Stream enables researchers to discover relevant academic papers through 
 
 ## Architecture
 
-### Training Pipeline
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Training Pipeline                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
-│  │  Raw ArXiv  │───▶│  Balanced   │───▶│   Diverse   │───▶│    LLM      │  │
-│  │  Metadata   │    │  Sampling   │    │   Pairs     │    │  Scoring    │  │
-│  │   (~5GB)    │    │  (100K)     │    │  (10K)      │    │  (GPT-4o +  │  │
-│  │             │    │             │    │             │    │   Claude)   │  │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
-│                                                                  │          │
-│                                                                  ▼          │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
-│  │   TF-IDF    │    │  Base ST    │    │ Fine-tuned  │◀───│  Annotated  │  │
-│  │   Model     │    │ Embeddings  │    │     ST      │    │   Pairs     │  │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Deployment Architecture (Google Cloud Run)
-
-```
-                              ┌─────────────────────────────┐
-                              │        Internet             │
-                              └──────────────┬──────────────┘
-                                             │
-                                             ▼
-                              ┌─────────────────────────────┐
-                              │   Cloud Run Gateway         │
-                              │   (Routes by model param)   │
-                              │   ~100MB, 512Mi RAM         │
-                              └──────────────┬──────────────┘
-                                             │
-              ┌──────────────────────────────┼──────────────────────────────┐
-              │                              │                              │
-              ▼                              ▼                              ▼
-┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
-│   TF-IDF Service        │   │   Base ST Service       │   │   Fine-tuned Service    │
-│   ~350MB image          │   │   ~700MB image          │   │   ~900MB image          │
-│   1Gi RAM               │   │   2Gi RAM               │   │   2Gi RAM               │
-│                         │   │                         │   │                         │
-│   • Papers (100K)       │   │   • Papers (100K)       │   │   • Papers (100K)       │
-│   • TF-IDF Vectorizer   │   │   • ST Model            │   │   • Fine-tuned Model    │
-│   • Sparse Matrix       │   │   • Embeddings (150MB)  │   │   • Embeddings (150MB)  │
-└─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
-```
+![Diagram](./images/architecture.png)
 
 **Why separate services?**
 - Smaller Docker images = faster cold starts
