@@ -1,36 +1,60 @@
 #!/bin/bash
-# Deployment script for Google Cloud Run
+# Deployment script for Scholar Stream on Google Cloud Run
+# Uses Artifact Registry and Cloud Build
 
 set -e
 
-PROJECT_ID=${PROJECT_ID:-"your-gcp-project-id"}
-REGION=${REGION:-"us-central1"}
+# Configuration
+PROJECT_ID=${PROJECT_ID:-"amirthalingam"}
+REGION=${REGION:-"asia-south1"}
+REPO_NAME="scholar-stream"
+REPO_REGION="asia-south1"
 
-echo "Deploying Scholar Stream services to Google Cloud Run"
-echo "Project: $PROJECT_ID"
-echo "Region: $REGION"
+echo "=========================================="
+echo "Starting Deployment for Scholar Stream"
+echo "   Project:  $PROJECT_ID"
+echo "   Region:   $REGION"
+echo "   Repo:     $REPO_NAME"
+echo "=========================================="
 
-# Function to deploy a service
+# Ensure required APIs are enabled
+gcloud services enable artifactregistry.googleapis.com cloudbuild.googleapis.com run.googleapis.com
+
+# ---------------------------------------------------------
+# Helper Function: Deploy a Service
+# ---------------------------------------------------------
 deploy_service() {
-    local service=$1
-    local dockerfile=$2
-    local memory=${3:-"2Gi"}
+    local service_name=$1      # e.g., tfidf
+    local dockerfile_path=$2   # e.g., api/services/tfidf/Dockerfile
+    local memory=${3:-"1Gi"}   # Default to 1Gi if not set
     
+    # Define Image URL for Artifact Registry
+    local image_url="$REPO_REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$service_name"
+
     echo ""
-    echo "=========================================="
-    echo "Deploying $service..."
-    echo "=========================================="
+    echo "------------------------------------------"
+    echo "Building & Deploying: $service_name"
+    echo "------------------------------------------"
     
-    # Build and push
-    gcloud builds submit \
-        --tag gcr.io/$PROJECT_ID/scholar-stream-$service \
-        --project $PROJECT_ID \
-        -f $dockerfile \
-        .
+    # 1. FIX CONTEXT: Temporarily copy Dockerfile to root
+    # This allows Docker to see 'api/shared' and other root-level folders
+    if [ ! -f "$dockerfile_path" ]; then
+        echo "Error: Dockerfile not found at $dockerfile_path"
+        exit 1
+    fi
+    cp "$dockerfile_path" ./Dockerfile
+
+    # 2. Build and Push to Artifact Registry (using root context .)
+    echo "   Building image..."
+    gcloud builds submit --tag "$image_url" .
     
-    # Deploy to Cloud Run
-    gcloud run deploy scholar-stream-$service \
-        --image gcr.io/$PROJECT_ID/scholar-stream-$service \
+    # 3. Cleanup temporary Dockerfile
+    rm ./Dockerfile
+    
+    # 4. Deploy to Cloud Run
+    echo "   Deploying to Cloud Run..."
+    gcloud run deploy scholar-stream-$service_name \
+        --image "$image_url" \
         --platform managed \
         --region $REGION \
         --allow-unauthenticated \
@@ -38,48 +62,55 @@ deploy_service() {
         --cpu 1 \
         --min-instances 0 \
         --max-instances 3 \
-        --project $PROJECT_ID
-    
-    # Get the service URL
-    URL=$(gcloud run services describe scholar-stream-$service \
+        --project $PROJECT_ID > /dev/null 2>&1
+
+    # 5. Retrieve and print the URL
+    local service_url=$(gcloud run services describe scholar-stream-$service_name \
         --platform managed \
         --region $REGION \
         --format 'value(status.url)' \
         --project $PROJECT_ID)
     
-    echo "$service deployed at: $URL"
+    echo "Success! $service_name is live at: $service_url"
+    
+    # Return the URL so we can use it later
+    echo "$service_url"
 }
 
-# Deploy backend services first
-deploy_service "tfidf" "api/services/tfidf/Dockerfile" "1Gi"
-deploy_service "sentence-transformer" "api/services/sentence_transformer/Dockerfile" "2Gi"
-deploy_service "finetuned" "api/services/finetuned/Dockerfile" "2Gi"
+# ---------------------------------------------------------
+# Step 1: Deploy Backend Services
+# ---------------------------------------------------------
+echo ""
+echo ">>> Phase 1: Deploying Backend Services..."
 
-# Get backend service URLs
-TFIDF_URL=$(gcloud run services describe scholar-stream-tfidf --platform managed --region $REGION --format 'value(status.url)' --project $PROJECT_ID)
-ST_URL=$(gcloud run services describe scholar-stream-sentence-transformer --platform managed --region $REGION --format 'value(status.url)' --project $PROJECT_ID)
-FT_URL=$(gcloud run services describe scholar-stream-finetuned --platform managed --region $REGION --format 'value(status.url)' --project $PROJECT_ID)
+# Capture the output (URL) of each function call
+TFIDF_URL=$(deploy_service "tfidf" "api/services/tfidf/Dockerfile" "1Gi")
+ST_URL=$(deploy_service "sentence-transformer" "api/services/sentence_transformer/Dockerfile" "2Gi")
+FT_URL=$(deploy_service "finetuned" "api/services/finetuned/Dockerfile" "2Gi")
 
 echo ""
-echo "Backend services deployed:"
-echo "  TF-IDF: $TFIDF_URL"
-echo "  Sentence Transformer: $ST_URL"
-echo "  Fine-tuned: $FT_URL"
+echo ">>> Backend Services URLs Captured:"
+echo "   TF-IDF:      $TFIDF_URL"
+echo "   Transformer: $ST_URL"
+echo "   Fine-tuned:  $FT_URL"
 
-# Deploy gateway with backend URLs
+# ---------------------------------------------------------
+# Step 2: Deploy Gateway (Linked to Backends)
+# ---------------------------------------------------------
 echo ""
-echo "=========================================="
-echo "Deploying gateway with backend URLs..."
-echo "=========================================="
+echo ">>> Phase 2: Deploying Gateway..."
 
-gcloud builds submit \
-    --tag gcr.io/$PROJECT_ID/scholar-stream-gateway \
-    --project $PROJECT_ID \
-    -f api/gateway/Dockerfile \
-    .
+GATEWAY_IMAGE="$REPO_REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/gateway"
+
+# Prepare Gateway Dockerfile (Assuming it is at api/gateway/Dockerfile)
+# We use the same copy-to-root trick in case Gateway uses shared code
+cp "api/gateway/Dockerfile" ./Dockerfile
+
+gcloud builds submit --tag "$GATEWAY_IMAGE" .
+rm ./Dockerfile
 
 gcloud run deploy scholar-stream-gateway \
-    --image gcr.io/$PROJECT_ID/scholar-stream-gateway \
+    --image "$GATEWAY_IMAGE" \
     --platform managed \
     --region $REGION \
     --allow-unauthenticated \
@@ -92,16 +123,18 @@ gcloud run deploy scholar-stream-gateway \
 
 GATEWAY_URL=$(gcloud run services describe scholar-stream-gateway --platform managed --region $REGION --format 'value(status.url)' --project $PROJECT_ID)
 
+# ---------------------------------------------------------
+# Final Summary
+# ---------------------------------------------------------
 echo ""
 echo "=========================================="
-echo "Deployment complete!"
+echo " DEPLOYMENT COMPLETE!"
 echo "=========================================="
+echo "Main Access Point (Gateway):"
+echo " $GATEWAY_URL"
 echo ""
-echo "Gateway URL: $GATEWAY_URL"
-echo ""
-echo "API Endpoints:"
-echo "  Search: $GATEWAY_URL/api/v1/scholar-stream/search?q=<query>&model=<model>"
-echo "  Recommendations: $GATEWAY_URL/api/v1/scholar-stream/recommendations?paper_id=<id>&model=<model>"
-echo "  Paper Details: $GATEWAY_URL/api/v1/scholar-stream/paper/<paper_id>"
-echo ""
-echo "Models: tfidf, base_transformer, fine_tuned_transformer"
+echo "Service Endpoints:"
+echo " - TF-IDF: $TFIDF_URL"
+echo " - Sentence Transformer: $ST_URL"
+echo " - Fine Tuned: $FT_URL"
+echo "=========================================="

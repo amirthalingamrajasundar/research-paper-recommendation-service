@@ -526,7 +526,7 @@ make api-down
 ```bash
 # Set your project
 export PROJECT_ID=your-gcp-project-id
-export REGION=us-central1
+export REGION=asia-south1
 
 # Deploy all services
 make deploy
@@ -541,18 +541,19 @@ This will:
 #### Manual Deployment
 
 ```bash
-# Build and push individual service
+# Build and push individual service (from project root)
 gcloud builds submit \
   --tag gcr.io/$PROJECT_ID/scholar-stream-tfidf \
-  -f api/services/tfidf/Dockerfile .
+  api/services/tfidf/Dockerfile
 
 # Deploy to Cloud Run
 gcloud run deploy scholar-stream-tfidf \
   --image gcr.io/$PROJECT_ID/scholar-stream-tfidf \
   --platform managed \
-  --region us-central1 \
+  --region $REGION \
   --memory 1Gi \
-  --allow-unauthenticated
+  --allow-unauthenticated \
+  --project $PROJECT_ID
 ```
 
 ### Cost Estimates (Cloud Run)
