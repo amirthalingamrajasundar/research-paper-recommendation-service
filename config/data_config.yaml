@@ -9,13 +9,16 @@ dataset:
   paths:
     raw_data: "data/raw/arxiv-metadata-oai-snapshot.json"
     processed_data: "data/processed/index_100k.parquet"
+    train_data: "data/processed/train_papers.parquet"
+    holdout_data: "data/processed/holdout_papers.parquet"
 
-sampling:
-  total_size: 100000
-  max_per_category: 2000
+# Data preparation settings (used by prepare_focused_data.py)
+preparation:
+  total_size: 30000
+  holdout_size: 5000
+  category: "cs.AI"
 
-annotation:
-  n_pairs: 11000
-  batch_size: 10
-  paths:
-    output: "data/annotated/training_pairs_10k.csv"
+# Hard pair mining settings (used by mine_hard_pairs.py)
+hard_pairs:
+  n_pairs: 50000
+  output: "data/annotated/hard_pairs.csv"

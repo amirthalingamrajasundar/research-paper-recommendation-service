@@ -1,44 +1,39 @@
 # Makefile
-.PHONY: data annotate train finetune eval all api-dev api-build api-up api-down deploy
+.PHONY: data ada-embed mine-pairs train finetune embeddings eval all api-build api-up api-down deploy
 
 # ============== Training Pipeline ==============
+# Step 1: Prepare focused data with train/holdout split (settings from config)
 data:
-	python -m scripts.prepare_data
+	python -m scripts.prepare_focused_data
 
-annotate:
-	python -m scripts.generate_annotations
+# Step 2: Generate ada-002 embeddings (teacher model)
+ada-embed:
+	python -m scripts.generate_ada_embeddings
 
+# Step 3: Mine hard training pairs (percentile-based: top 25% positive, bottom 25% negative)
+mine-pairs:
+	python -m scripts.mine_hard_pairs --top-k 20 --pos-percentile 75 --neg-percentile 25 --gap-threshold 0.2
+
+# Step 4: Train baseline models (TF-IDF + base ST)
 train:
 	python -m scripts.train_models --baseline
 
+# Step 5: Fine-tune on hard pairs
 finetune:
 	python -m scripts.train_models --finetune
 
+# Step 6: Generate embeddings for holdout evaluation
+embeddings:
+	python -m scripts.generate_holdout_embeddings
+
+# Step 7: Evaluate all models vs ada-002 (ground truth)
 eval:
-	python -m scripts.run_evaluation --n_samples 20 --top_k 10
+	python -m scripts.evaluate_vs_ada --n-samples 5000 --k-values 1 3 5 10
 
-all: data train annotate finetune eval
+# Run complete pipeline
+all: data ada-embed mine-pairs train finetune embeddings eval
 
-# ============== API Development ==============
-api-dev:
-	@echo "Starting API services for local development..."
-	@echo "TF-IDF: http://localhost:8001"
-	@echo "ST: http://localhost:8002"
-	@echo "Gateway: http://localhost:8000"
-	python -m api.services.tfidf.main & \
-	python -m api.services.sentence_transformer.main & \
-	python -m api.gateway.main
-
-api-tfidf:
-	python -m api.services.tfidf.main
-
-api-st:
-	python -m api.services.sentence_transformer.main
-
-api-gateway:
-	python -m api.gateway.main
-
-# ============== Docker ==============
+# ============== API ==============
 api-build:
 	docker-compose build
 

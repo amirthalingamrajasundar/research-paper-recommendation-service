@@ -150,3 +150,8 @@ docker-compose.override.yml
 *.backup
 .codeiumignore
 Users/
+
+
+backup*
+data/*
+models/*

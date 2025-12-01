@@ -20,49 +20,40 @@ from src.config import settings
 logger = logging.getLogger(__name__)
 
 
-def load_training_data(annotations_path, papers_df):
+def load_training_data(annotations_path):
     """
-    Load annotations and convert to HuggingFace Dataset format.
+    Load pre-balanced training data from mine_hard_pairs.py.
+    
+    The mining script already creates balanced positive/negative pairs
+    using percentile-based thresholds. We just load and use them directly.
     
     Args:
-        annotations_path: Path to annotated pairs CSV
-        papers_df: DataFrame with all papers (must have 'id', 'text' columns)
+        annotations_path: Path to hard pairs CSV (already balanced)
     
     Returns:
         HuggingFace Dataset with sentence1, sentence2, and score columns
     """
-    # Load annotations with explicit string dtype to preserve paper ID format
-    annotations_df = pd.read_csv(annotations_path, dtype={'paper1_id': str, 'paper2_id': str})
-    logger.info(f"Loaded {len(annotations_df)} annotated pairs")
+    df = pd.read_csv(annotations_path)
+    logger.info(f"Loaded {len(df)} training pairs")
     
-    # Index papers by ID for fast lookup
-    papers_df = papers_df.set_index('id')
+    if 'ada_sim' not in df.columns:
+        raise ValueError("Training data must have 'ada_sim' column")
     
-    # Build training data
-    data = {'sentence1': [], 'sentence2': [], 'score': []}
-    skipped = 0
+    # Use ada_sim as the target score - mining script already balanced the data
+    data = {
+        'sentence1': df['text1'].tolist(),
+        'sentence2': df['text2'].tolist(),
+        'score': df['ada_sim'].tolist(),
+    }
     
-    for _, row in annotations_df.iterrows():
-        try:
-            paper1 = papers_df.loc[row['paper1_id']]
-            paper2 = papers_df.loc[row['paper2_id']]
-            
-            data['sentence1'].append(paper1['text'])
-            data['sentence2'].append(paper2['text'])
-            data['score'].append(float(row['avg_score']))  # normalized 0-1
-        except KeyError:
-            skipped += 1
-            continue
+    scores = data['score']
+    logger.info(f"Score distribution: min={min(scores):.3f}, max={max(scores):.3f}, mean={sum(scores)/len(scores):.3f}")
     
-    if skipped > 0:
-        logger.warning(f"Skipped {skipped} pairs (paper IDs not found)")
-    
-    logger.info(f"Created {len(data['sentence1'])} training examples")
     return Dataset.from_dict(data)
 
 
 def finetune_sentence_transformer(
-    papers_df: pd.DataFrame,
+    papers_df: pd.DataFrame = None,
     annotations_path=None,
     base_model: str = None,
     epochs: int = None,
@@ -70,7 +61,8 @@ def finetune_sentence_transformer(
     warmup_ratio: float = 0.1,
     evaluation_steps: int = None,
     output_path=None,
-    test_size: float = 0.2
+    test_size: float = 0.2,
+    plot_training_curve: bool = True,
 ):
     """
     Fine-tune a sentence transformer model on annotated paper pairs.
@@ -105,9 +97,10 @@ def finetune_sentence_transformer(
     logger.info(f"  Epochs: {epochs}")
     logger.info(f"  Batch size: {batch_size}")
     logger.info(f"  Output path: {output_path}")
+    logger.info(f"  Annotations path: {annotations_path}")
     
     # Load and prepare data as HuggingFace Dataset
-    dataset = load_training_data(annotations_path, papers_df)
+    dataset = load_training_data(annotations_path)
     
     if len(dataset) < 10:
         raise ValueError(f"Not enough training examples ({len(dataset)}). Need at least 10.")
@@ -124,7 +117,9 @@ def finetune_sentence_transformer(
     logger.info(f"Loading base model: {base_model}")
     model = SentenceTransformer(base_model)
     
-    # Define loss function - CosineSimilarityLoss for regression on similarity scores
+    # Define loss function - CosineSimilarityLoss with balanced pos/neg pairs
+    # Positive pairs (high ada_sim) push embeddings together
+    # Negative pairs (low ada_sim) push embeddings apart - prevents collapse!
     train_loss = losses.CosineSimilarityLoss(model=model)
     
     # Define evaluator for validation
@@ -169,13 +164,85 @@ def finetune_sentence_transformer(
     
     # Fine-tune
     logger.info(f"Starting fine-tuning for {epochs} epochs...")
-    trainer.train()
+    train_result = trainer.train()
     
     # Save the final model
     model.save(str(output_path))
     logger.info(f"Fine-tuning complete! Model saved to: {output_path}")
     
+    # Plot training curve if requested
+    if plot_training_curve:
+        plot_training_loss(trainer, output_path)
+    
     return model
+
+
+def plot_training_loss(trainer, output_path):
+    """
+    Plot and save training loss curve.
+    
+    Args:
+        trainer: SentenceTransformerTrainer with training history
+        output_path: Directory to save plot
+    """
+    import matplotlib.pyplot as plt
+    
+    try:
+        # Extract training history from trainer state
+        history = trainer.state.log_history
+        
+        # Separate training and eval metrics
+        train_steps = []
+        train_losses = []
+        eval_steps = []
+        eval_scores = []
+        
+        for entry in history:
+            if 'loss' in entry:
+                train_steps.append(entry.get('step', 0))
+                train_losses.append(entry['loss'])
+            if 'eval_arxiv-validation_spearman_cosine' in entry:
+                eval_steps.append(entry.get('step', 0))
+                eval_scores.append(entry['eval_arxiv-validation_spearman_cosine'])
+        
+        if not train_losses:
+            logger.warning("No training history found for plotting")
+            return
+        
+        # Create figure with two subplots
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # Plot training loss
+        axes[0].plot(train_steps, train_losses, 'b-', linewidth=2, label='Training Loss')
+        axes[0].set_xlabel('Step', fontsize=12)
+        axes[0].set_ylabel('Loss', fontsize=12)
+        axes[0].set_title('Training Loss Curve', fontsize=14, fontweight='bold')
+        axes[0].grid(True, alpha=0.3)
+        axes[0].legend()
+        
+        # Plot validation score
+        if eval_scores:
+            axes[1].plot(eval_steps, eval_scores, 'g-o', linewidth=2, markersize=6, label='Spearman Correlation')
+            axes[1].set_xlabel('Step', fontsize=12)
+            axes[1].set_ylabel('Spearman Correlation', fontsize=12)
+            axes[1].set_title('Validation Performance', fontsize=14, fontweight='bold')
+            axes[1].grid(True, alpha=0.3)
+            axes[1].legend()
+        else:
+            axes[1].text(0.5, 0.5, 'No validation scores available', 
+                        ha='center', va='center', transform=axes[1].transAxes)
+        
+        plt.tight_layout()
+        
+        # Save plot
+        plot_path = Path(output_path).parent / "training_curve.png"
+        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"Training curve saved to {plot_path}")
+        
+    except Exception as e:
+        logger.warning(f"Could not plot training curve: {e}")
 
 
 def generate_finetuned_embeddings(model, papers_df, output_path=None):

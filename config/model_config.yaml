@@ -13,16 +13,26 @@ sentence_transformer:
   batch_size: 32
   paths:
     embeddings: "models/sentence_transformer/embeddings.npy"
+    train_embeddings: "models/sentence_transformer/train_embeddings.npy"
+    holdout_embeddings: "models/sentence_transformer/holdout_embeddings.npy"
   
   fine_tuning:
-    epochs: 10
+    epochs: 3
     warmup_steps: 100
     learning_rate: 2e-5
-    batch_size: 16
-    evaluation_steps: 500
+    batch_size: 32     # Larger batch = more in-batch negatives for contrastive loss
+    evaluation_steps: 200
     paths:
       model: "models/finetuned_st/model"
       embeddings: "models/finetuned_st/embeddings.npy"
+      holdout_embeddings: "models/finetuned_st/holdout_embeddings.npy"
+
+ada_embeddings:
+  batch_size: 32
+  max_retries: 3
+  paths:
+    train_embeddings: "models/ada_embeddings/train_embeddings.npy"
+    holdout_embeddings: "models/ada_embeddings/holdout_embeddings.npy"
     
 evaluation:
   k_values: [5, 10, 20, 50]
