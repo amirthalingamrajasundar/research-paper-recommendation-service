@@ -2,6 +2,10 @@
 
 A research paper recommendation system that uses knowledge distillation to transfer semantic understanding from OpenAI's Ada-002 embeddings to a lightweight Sentence Transformer model.
 
+## Team Details
+1. Amirthalingam Rajasundar (amirthaling1@iisc.ac.in)
+2. Grampurohit Santosh (santoshvg@iisc.ac.in)
+
 ## 1. Problem Statement
 
 Researchers often struggle to discover relevant papers across the vast academic literature. This project builds a recommendation system that:
@@ -112,17 +116,22 @@ Loss = CosineSimilarityLoss(
 | Batch Size | 32 |
 | Learning Rate | 2e-5 |
 
+![Diagram](./images/training_curve.png)
+
 ### Training Commands
 
 ```bash
-# Train baseline models (TF-IDF + base ST)
+# Step 4: Train baseline models (TF-IDF + base ST)
 make train
 
-# Fine-tune on Ada-002 similarity scores
+# Step 5: Fine-tune on Ada-002 similarity scores
 make finetune
 
-# Generate embeddings for all models
+# Step 6: Generate holdout embeddings for evaluation
 make embeddings
+
+# Step 7: Evaluate all models
+make eval
 ```
 
 ---
@@ -131,30 +140,36 @@ make embeddings
 
 ### Metrics
 
-We evaluate how well each model's similarity rankings correlate with Ada-002 (ground truth):
+We evaluate how well each model's top-k recommendations match Ada-002's top-k (ground truth):
 
 | Metric | Description |
 |--------|-------------|
-| **Spearman Correlation** | Rank correlation between model and Ada similarities |
-| **Mean Absolute Error** | Average |model_sim - ada_sim| |
-| **Recall@K** | Fraction of Ada's top-K found in model's top-K |
+| **Recall@k** | Fraction of Ada's top-k found in model's top-k |
+| **NDCG@k** | Ranking quality - rewards relevant items appearing earlier |
+| **MRR** | Mean Reciprocal Rank - how quickly first relevant item appears |
+| **MAP@k** | Mean Average Precision across the ranking |
+
+![Diagram](./images/metrics_vs_k.png)
 
 ### Run Evaluation
 
 ```bash
-# Generate evaluation visualizations
-python -m scripts.evaluate_visual
+# Generate holdout embeddings for all models
+make embeddings
+
+# Evaluate all models vs Ada-002
+make eval
 ```
 
-### Expected Results
+### Results (5,000 holdout papers)
 
-| Model | Spearman ρ | MAE | Notes |
-|-------|------------|-----|-------|
-| TF-IDF | ~0.15 | ~0.35 | Keyword matching only |
-| Base ST | ~0.25 | ~0.30 | General semantic understanding |
-| Fine-tuned ST | ~0.40+ | ~0.25 | Learns Ada's similarity notion |
+| Model | Recall@10 | NDCG@10 | MRR@10 | MAP@10 |
+|-------|-----------|---------|--------|--------|
+| TF-IDF | 0.242 | 0.282 | 0.586 | 0.500 |
+| Base ST | 0.302 | 0.360 | 0.715 | 0.604 |
+| **Fine-tuned ST** | **0.313** | **0.374** | **0.743** | **0.619** |
 
-**Key Insight**: Fine-tuning improves correlation with Ada-002 by learning domain-specific semantic relationships that the base model misses.
+**Key Insight**: Fine-tuning improves all metrics by learning domain-specific semantic relationships from Ada-002. The improvement is consistent across all k values.
 
 ---
 
@@ -211,11 +226,16 @@ make deploy
 pip install -r requirements.txt
 
 # 2. Prepare data and train models
-make data
-make ada-embed      # Requires OPENAI_API_KEY
-make mine-pairs
-make train
-make finetune
+make all            # Runs full pipeline (requires OPENAI_API_KEY)
+
+# Or run steps individually:
+# make data          - Prepare train/holdout split
+# make ada-embed     - Generate Ada-002 embeddings
+# make mine-pairs    - Mine hard training pairs
+# make train         - Train TF-IDF + base ST
+# make finetune      - Fine-tune on hard pairs
+# make embeddings    - Generate holdout embeddings
+# make eval          - Evaluate vs Ada-002
 
 # 3. Run API locally
 make api-up
